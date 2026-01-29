@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Invaders</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+        }
+
+        #gameCanvas {
+            display: block;
+            border: 2px solid #0f0;
+            box-shadow: 0 0 20px #0f0;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            color: #0f0;
+            font-size: 18px;
+            text-shadow: 0 0 10px #0f0;
+            z-index: 10;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #f00;
+            display: none;
+            z-index: 20;
+        }
+
+        #gameOver h1 {
+            font-size: 48px;
+            text-shadow: 0 0 20px #f00;
+            margin-bottom: 20px;
+        }
+
+        #gameOver p {
+            font-size: 24px;
+            color: #fff;
+            margin: 10px 0;
+        }
+
+        #gameOver .restart {
+            color: #0f0;
+            font-size: 20px;
+            margin-top: 30px;
+            animation: blink 1s infinite;
+        }
+
+        #victory {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #0f0;
+            display: none;
+            z-index: 20;
+        }
+
+        #victory h1 {
+            font-size: 48px;
+            text-shadow: 0 0 20px #0f0;
+            margin-bottom: 20px;
+        }
+
+        #victory p {
+            font-size: 24px;
+            color: #fff;
+            margin: 10px 0;
+        }
+
+        #victory .restart {
+            color: #ff0;
+            font-size: 20px;
+            margin-top: 30px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .lives-container {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .life-icon {
+            width: 20px;
+            height: 15px;
+            background: #0f0;
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="ui">
+            <div id="score">SCORE: 0</div>
+            <div id="highScore">HIGH SCORE: 0</div>
+            <div class="lives-container">
+                <span>LIVES:</span>
+                <div id="livesDisplay"></div>
+            </div>
+        </div>
+        <div id="gameOver">
+            <h1>GAME OVER</h1>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <p>High Score: <span id="finalHighScore">0</span></p>
+            <p class="restart">Press ENTER to restart</p>
+        </div>
+        <div id="victory">
+            <h1>VICTORY!</h1>
+            <p>You defeated the invaders!</p>
+            <p>Final Score: <span id="victoryScore">0</span></p>
+            <p class="restart">Press ENTER to play again</p>
+        </div>
+    </div>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Audio context for sound effects
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // Sound effect generators using Web Audio API
+        function playShootSound() {
+            if (!audioCtx) return;
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playExplosionSound() {
+            if (!audioCtx) return;
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'sawtooth';
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.setValueAtTime(150, audioCtx.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
+            gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + 0.2);
+        }
+
+        function playPlayerHitSound() {
+            if (!audioCtx) return;
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'square';
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
+            gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + 0.3);
+        }
+
+        function playAlienShootSound() {
+            if (!audioCtx) return;
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'triangle';
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.15);
+            gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + 0.15);
+        }
+
+        // Game state
+        let gameState = 'playing'; // playing, gameOver, victory
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('spaceInvadersHighScore')) || 0;
+        let lives = 3;
+
+        // Stars for background
+        const stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2 + 0.5,
+                speed: Math.random() * 0.5 + 0.1,
+                brightness: Math.random()
+            });
+        }
+
+        // Player class
+        class Player {
+            constructor() {
+                this.width = 50;
+                this.height = 30;
+                this.x = canvas.width / 2 - this.width / 2;
+                this.y = canvas.height - this.height - 20;
+                this.speed = 5;
+                this.canShoot = true;
+                this.shootCooldown = 300; // milliseconds
+            }
+
+            draw() {
+                ctx.fillStyle = '#0f0';
+                // Main body
+                ctx.beginPath();
+                ctx.moveTo(this.x + this.width / 2, this.y);
+                ctx.lineTo(this.x, this.y + this.height);
+                ctx.lineTo(this.x + this.width, this.y + this.height);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Cockpit
+                ctx.fillStyle = '#0a0';
+                ctx.beginPath();
+                ctx.moveTo(this.x + this.width / 2, this.y + 8);
+                ctx.lineTo(this.x + 15, this.y + this.height - 5);
+                ctx.lineTo(this.x + this.width - 15, this.y + this.height - 5);
+                ctx.closePath();
+                ctx.fill();
+
+                // Glow effect
+                ctx.shadowColor = '#0f0';
+                ctx.shadowBlur = 10;
+                ctx.fillStyle = '#0f0';
+                ctx.fillRect(this.x + this.width / 2 - 2, this.y + this.height - 5, 4, 5);
+                ctx.shadowBlur = 0;
+            }
+
+            moveLeft() {
+                if (this.x > 0) {
+                    this.x -= this.speed;
+                }
+            }
+
+            moveRight() {
+                if (this.x < canvas.width - this.width) {
+                    this.x += this.speed;
+                }
+            }
+
+            shoot() {
+                if (this.canShoot) {
+                    initAudio();
+                    playShootSound();
+                    bullets.push(new Bullet(this.x + this.width / 2 - 2, this.y, -8, 'player'));
+                    this.canShoot = false;
+                    setTimeout(() => this.canShoot = true, this.shootCooldown);
+                }
+            }
+        }
+
+        // Alien class
+        class Alien {
+            constructor(x, y, row) {
+                this.width = 40;
+                this.height = 30;
+                this.x = x;
+                this.y = y;
+                this.row = row;
+                this.alive = true;
+                this.animFrame = 0;
+            }
+
+            draw() {
+                if (!this.alive) return;
+
+                // Different colors based on row
+                const colors = ['#f00', '#f50', '#ff0', '#f0f', '#f00'];
+                ctx.fillStyle = colors[this.row % 5];
+
+                // Alien body - pixel art style
+                const px = 4; // pixel size
+                
+                // Body pattern (simplified invader shape)
+                ctx.fillRect(this.x + px * 2, this.y, px * 6, px);
+                ctx.fillRect(this.x + px, this.y + px, px * 8, px);
+                ctx.fillRect(this.x, this.y + px * 2, px * 10, px);
+                ctx.fillRect(this.x, this.y + px * 3, px * 3, px);
+                ctx.fillRect(this.x + px * 4, this.y + px * 3, px * 2, px);
+                ctx.fillRect(this.x + px * 7, this.y + px * 3, px * 3, px);
+                ctx.fillRect(this.x + px * 2, this.y + px * 4, px * 2, px);
+                ctx.fillRect(this.x + px * 6, this.y + px * 4, px * 2, px);
+
+                // Eyes
+                ctx.fillStyle = '#000';
+                ctx.fillRect(this.x + px * 2, this.y + px * 2, px, px);
+                ctx.fillRect(this.x + px * 7, this.y + px * 2, px, px);
+            }
+        }
+
+        // Bullet class
+        class Bullet {
+            constructor(x, y, speed, owner) {
+                this.x = x;
+                this.y = y;
+                this.width = 4;
+                this.height = 15;
+                this.speed = speed;
+                this.owner = owner; // 'player' or 'alien'
+                this.active = true;
+            }
+
+            update() {
+                this.y += this.speed;
+                if (this.y < 0 || this.y > canvas.height) {
+                    this.active = false;
+                }
+            }
+
+            draw() {
+                if (this.owner === 'player') {
+                    ctx.fillStyle = '#ff0';
+                    ctx.shadowColor = '#ff0';
+                    ctx.shadowBlur = 10;
+                } else {
+                    ctx.fillStyle = '#f00';
+                    ctx.shadowColor = '#f00';
+                    ctx.shadowBlur = 10;
+                }
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // Particle class for explosions
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.size = Math.random() * 4 + 2;
+                this.speedX = (Math.random() - 0.5) * 6;
+                this.speedY = (Math.random() - 0.5) * 6;
+                this.life = 1;
+                this.decay = Math.random() * 0.02 + 0.02;
+            }
+
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.life -= this.decay;
+            }
+
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 5;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // Game objects
+        let player = new Player();
+        let aliens = [];
+        let bullets = [];
+        let particles = [];
+
+        // Alien movement
+        let alienDirection = 1;
+        let alienSpeed = 1;
+        let alienMoveTimer = 0;
+        let alienMoveInterval = 50; // frames between moves
+        let alienShootTimer = 0;
+
+        // Input handling
+        const keys = {};
+
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+            }
+            if (e.key === 'Enter' && (gameState === 'gameOver' || gameState === 'victory')) {
+                restartGame();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Initialize aliens
+        function initAliens() {
+            aliens = [];
+            const rows = 5;
+            const cols = 10;
+            const startX = 50;
+            const startY = 60;
+            const spacingX = 60;
+            const spacingY = 45;
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    aliens.push(new Alien(
+                        startX + col * spacingX,
+                        startY + row * spacingY,
+                        row
+                    ));
+                }
+            }
+        }
+
+        // Create explosion particles
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        // Update lives display
+        function updateLivesDisplay() {
+            const livesDisplay = document.getElementById('livesDisplay');
+            livesDisplay.innerHTML = '';
+            for (let i = 0; i < lives; i++) {
+                const life = document.createElement('div');
+                life.className = 'life-icon';
+                livesDisplay.appendChild(life);
+            }
+        }
+
+        // Update score display
+        function updateScoreDisplay() {
+            document.getElementById('score').textContent = `SCORE: ${score}`;
+            document.getElementById('highScore').textContent = `HIGH SCORE: ${highScore}`;
+        }
+
+        // Check collision between two rectangles
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        // Alien shooting logic
+        function alienShoot() {
+            const aliveAliens = aliens.filter(a => a.alive);
+            if (aliveAliens.length === 0) return;
+
+            // Get bottom-most aliens in each column
+            const bottomAliens = [];
+            for (let col = 0; col < 10; col++) {
+                const columnAliens = aliveAliens.filter(a => {
+                    const alienCol = Math.floor((a.x - 50) / 60);
+                    return alienCol === col;
+                });
+                if (columnAliens.length > 0) {
+                    const bottomAlien = columnAliens.reduce((prev, curr) => 
+                        prev.y > curr.y ? prev : curr
+                    );
+                    bottomAliens.push(bottomAlien);
+                }
+            }
+
+            if (bottomAliens.length > 0) {
+                const shooter = bottomAliens[Math.floor(Math.random() * bottomAliens.length)];
+                playAlienShootSound();
+                bullets.push(new Bullet(
+                    shooter.x + shooter.width / 2 - 2,
+                    shooter.y + shooter.height,
+                    5,
+                    'alien'
+                ));
+            }
+        }
+
+        // Draw animated stars background
+        function drawStars() {
+            stars.forEach(star => {
+                star.y += star.speed;
+                if (star.y > canvas.height) {
+                    star.y = 0;
+                    star.x = Math.random() * canvas.width;
+                }
+                
+                star.brightness += (Math.random() - 0.5) * 0.1;
+                star.brightness = Math.max(0.3, Math.min(1, star.brightness));
+                
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+        }
+
+        // Game over
+        function gameOver() {
+            gameState = 'gameOver';
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('spaceInvadersHighScore', highScore);
+            }
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalHighScore').textContent = highScore;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        // Victory
+        function victory() {
+            gameState = 'victory';
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('spaceInvadersHighScore', highScore);
+            }
+            document.getElementById('victoryScore').textContent = score;
+            document.getElementById('victory').style.display = 'block';
+        }
+
+        // Restart game
+        function restartGame() {
+            gameState = 'playing';
+            score = 0;
+            lives = 3;
+            player = new Player();
+            bullets = [];
+            particles = [];
+            alienDirection = 1;
+            alienSpeed = 1;
+            alienMoveTimer = 0;
+            alienMoveInterval = 50;
+            alienShootTimer = 0;
+            initAliens();
+            updateLivesDisplay();
+            updateScoreDisplay();
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('victory').style.display = 'none';
+        }
+
+        // Main game loop
+        function gameLoop() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw stars
+            drawStars();
+
+            if (gameState === 'playing') {
+                // Handle input
+                if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+                    player.moveLeft();
+                }
+                if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+                    player.moveRight();
+                }
+                if (keys[' ']) {
+                    player.shoot();
+                }
+
+                // Update alien movement
+                alienMoveTimer++;
+                if (alienMoveTimer >= alienMoveInterval) {
+                    alienMoveTimer = 0;
+                    
+                    let shouldDrop = false;
+                    const aliveAliens = aliens.filter(a => a.alive);
+                    
+                    // Check if any alien hits the edge
+                    for (const alien of aliveAliens) {
+                        if ((alienDirection > 0 && alien.x + alien.width >= canvas.width - 10) ||
+                            (alienDirection < 0 && alien.x <= 10)) {
+                            shouldDrop = true;
+                            break;
+                        }
+                    }
+
+                    if (shouldDrop) {
+                        // Move down and reverse direction
+                        for (const alien of aliveAliens) {
+                            alien.y += 20;
+                            // Check if aliens reached the bottom
+                            if (alien.y + alien.height >= player.y) {
+                                gameOver();
+                            }
+                        }
+                        alienDirection *= -1;
+                    } else {
+                        // Move horizontally
+                        for (const alien of aliveAliens) {
+                            alien.x += alienDirection * alienSpeed * 10;
+                        }
+                    }
+                }
+
+                // Alien shooting
+                alienShootTimer++;
+                if (alienShootTimer >= 60) { // Shoot every ~1 second at 60fps
+                    alienShootTimer = 0;
+                    if (Math.random() < 0.5) { // 50% chance to shoot
+                        alienShoot();
+                    }
+                }
+
+                // Update bullets
+                bullets.forEach(bullet => bullet.update());
+                bullets = bullets.filter(bullet => bullet.active);
+
+                // Check bullet-alien collisions
+                bullets.forEach(bullet => {
+                    if (bullet.owner === 'player') {
+                        aliens.forEach(alien => {
+                            if (alien.alive && checkCollision(bullet, alien)) {
+                                bullet.active = false;
+                                alien.alive = false;
+                                playExplosionSound();
+                                createExplosion(alien.x + alien.width / 2, alien.y + alien.height / 2, '#f00');
+                                
+                                // Score based on row (higher rows = more points)
+                                const points = (5 - alien.row) * 20;
+                                score += points;
+                                updateScoreDisplay();
+
+                                // Speed up remaining aliens
+                                const aliveCount = aliens.filter(a => a.alive).length;
+                                if (aliveCount > 0) {
+                                    alienMoveInterval = Math.max(5, 50 - Math.floor((50 - aliveCount) * 0.8));
+                                }
+
+                                // Check for victory
+                                if (aliveCount === 0) {
+                                    victory();
+                                }
+                            }
+                        });
+                    }
+                });
+
+                // Check bullet-player collisions
+                bullets.forEach(bullet => {
+                    if (bullet.owner === 'alien' && bullet.active) {
+                        if (checkCollision(bullet, player)) {
+                            bullet.active = false;
+                            playPlayerHitSound();
+                            createExplosion(player.x + player.width / 2, player.y + player.height / 2, '#0f0');
+                            lives--;
+                            updateLivesDisplay();
+                            
+                            if (lives <= 0) {
+                                gameOver();
+                            } else {
+                                // Reset player position
+                                player.x = canvas.width / 2 - player.width / 2;
+                            }
+                        }
+                    }
+                });
+
+                // Update particles
+                particles.forEach(particle => particle.update());
+                particles = particles.filter(particle => particle.life > 0);
+            }
+
+            // Draw game objects
+            player.draw();
+            aliens.forEach(alien => alien.draw());
+            bullets.forEach(bullet => bullet.draw());
+            particles.forEach(particle => particle.draw());
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize game
+        initAliens();
+        updateLivesDisplay();
+        updateScoreDisplay();
+        gameLoop();
+    </script>
+</body>
+</html>
