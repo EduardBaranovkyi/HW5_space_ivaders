@@ -128,6 +128,7 @@
         <canvas id="gameCanvas" width="800" height="600"></canvas>
         <div id="ui">
             <div id="score">SCORE: 0</div>
+            <div id="level">LEVEL: 1</div>
             <div id="highScore">HIGH SCORE: 0</div>
             <div class="lives-container">
                 <span>LIVES:</span>
@@ -223,10 +224,12 @@
         }
 
         // Game state
-        let gameState = 'playing'; // playing, gameOver, victory
+        let gameState = 'playing'; // playing, gameOver, victory, levelUp
         let score = 0;
         let highScore = parseInt(localStorage.getItem('spaceInvadersHighScore')) || 0;
         let lives = 3;
+        let level = 1;
+        let levelUpTimer = 0;
 
         // Stars for background
         const stars = [];
@@ -478,6 +481,7 @@
         function updateScoreDisplay() {
             document.getElementById('score').textContent = `SCORE: ${score}`;
             document.getElementById('highScore').textContent = `HIGH SCORE: ${highScore}`;
+            document.getElementById('level').textContent = `LEVEL: ${level}`;
         }
 
         // Check collision between two rectangles
@@ -549,7 +553,65 @@
             document.getElementById('gameOver').style.display = 'block';
         }
 
-        // Victory
+        // Level up sound
+        function playLevelUpSound() {
+            if (!audioCtx) return;
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'sine';
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            // Play ascending notes
+            const notes = [523, 659, 784, 1047]; // C5, E5, G5, C6
+            notes.forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.1);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime + i * 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + i * 0.1 + 0.15);
+                osc.start(audioCtx.currentTime + i * 0.1);
+                osc.stop(audioCtx.currentTime + i * 0.1 + 0.15);
+            });
+        }
+
+        // Start next level
+        function startNextLevel() {
+            level++;
+            bullets = [];
+            particles = [];
+            alienDirection = 1;
+            // Increase base speed with each level
+            alienSpeed = 1 + (level - 1) * 0.2;
+            alienMoveTimer = 0;
+            // Decrease move interval (faster aliens) with each level
+            alienMoveInterval = Math.max(20, 50 - (level - 1) * 5);
+            alienShootTimer = 0;
+            initAliens();
+            // Move aliens down a bit more each level (up to a limit)
+            const extraDrop = Math.min((level - 1) * 10, 50);
+            aliens.forEach(alien => {
+                alien.y += extraDrop;
+            });
+            updateScoreDisplay();
+            gameState = 'playing';
+        }
+
+        // Level up - show message then continue
+        function levelUp() {
+            gameState = 'levelUp';
+            levelUpTimer = 120; // 2 seconds at 60fps
+            playLevelUpSound();
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('spaceInvadersHighScore', highScore);
+            }
+        }
+
+        // Victory (only shown if you want to end the game - keeping for compatibility)
         function victory() {
             gameState = 'victory';
             if (score > highScore) {
@@ -565,6 +627,7 @@
             gameState = 'playing';
             score = 0;
             lives = 3;
+            level = 1;
             player = new Player();
             bullets = [];
             particles = [];
@@ -573,6 +636,7 @@
             alienMoveTimer = 0;
             alienMoveInterval = 50;
             alienShootTimer = 0;
+            levelUpTimer = 0;
             initAliens();
             updateLivesDisplay();
             updateScoreDisplay();
@@ -670,9 +734,9 @@
                                     alienMoveInterval = Math.max(5, 50 - Math.floor((50 - aliveCount) * 0.8));
                                 }
 
-                                // Check for victory
+                                // Check for level complete - start next level
                                 if (aliveCount === 0) {
-                                    victory();
+                                    levelUp();
                                 }
                             }
                         });
@@ -702,6 +766,29 @@
                 // Update particles
                 particles.forEach(particle => particle.update());
                 particles = particles.filter(particle => particle.life > 0);
+            }
+
+            // Handle level up state
+            if (gameState === 'levelUp') {
+                levelUpTimer--;
+                
+                // Draw level up message
+                ctx.fillStyle = '#0f0';
+                ctx.font = '48px Courier New';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#0f0';
+                ctx.shadowBlur = 20;
+                ctx.fillText(`LEVEL ${level} COMPLETE!`, canvas.width / 2, canvas.height / 2 - 30);
+                ctx.font = '24px Courier New';
+                ctx.fillStyle = '#ff0';
+                ctx.shadowColor = '#ff0';
+                ctx.fillText(`Get ready for Level ${level + 1}...`, canvas.width / 2, canvas.height / 2 + 20);
+                ctx.shadowBlur = 0;
+                ctx.textAlign = 'left';
+                
+                if (levelUpTimer <= 0) {
+                    startNextLevel();
+                }
             }
 
             // Draw game objects
